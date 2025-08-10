@@ -8,14 +8,14 @@ from pathlib import Path
 
 
 def process_file(file_path):
-    logger = logging.getLogger("glkftbq")
+    logger = logging.getLogger("ftbq_keygen")
     logger.info(file_path)
 
     lang_dict = {}
     char_count = {}
 
     def gen_uuid(text: str):
-        key = f"glkftbq.{uuid.uuid5(uuid.NAMESPACE_DNS, text).hex}"
+        key = f"ftbq_keygen.{uuid.uuid5(uuid.NAMESPACE_DNS, text).hex}"
         lang_dict[key] = text
         char_count[key] = len(text)
         return "{" + key + "}"
@@ -64,7 +64,7 @@ def main():
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(format="%(message)s", level=log_level)
-    logger = logging.getLogger("glkftbq")
+    logger = logging.getLogger("ftbq_keygen")
 
     folder = Path(args.folder)
 
