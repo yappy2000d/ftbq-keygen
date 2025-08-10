@@ -1,0 +1,11 @@
+[project]
+name = "FTBQuest-LocalizationKeysGenerator"
+version = "0.1.0"
+description = "Generate localization keys for FTB Quests."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+ftbq-keygen = "ftbq_keygen.main:main"
+
