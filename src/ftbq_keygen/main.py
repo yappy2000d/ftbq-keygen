@@ -3,50 +3,70 @@ import re
 import uuid
 import json
 import logging
+from dataclasses import dataclass
+from typing import Callable, Tuple, Dict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+TITLE_CAPTURE_RE = re.compile(r'title:\s*"(.+?)"')
+DESC_ARRAY_RE = re.compile(r'description:\s*\[(?:\s*)?(?:"[^"]*"(?:\s*)?)+\]')
+QUOTED_STR_RE = re.compile(r'"(.+?)"')
 
-def process_file(file_path):
+
+@dataclass
+class KeyGenerator:
+    """Generates unique localization keys and accumulates them."""
+
+    lang_dict: Dict[str, str]
+    char_count: Dict[str, int]
+    prefix: str = "ftbq_keygen"
+
+    def __call__(self, text: str) -> str:
+        key = f"{self.prefix}.{uuid.uuid5(uuid.NAMESPACE_DNS, text).hex}"
+        self.lang_dict[key] = text
+        self.char_count[key] = len(text)
+        return "{" + key + "}"
+
+
+def replace_title(ctx: str, gen: Callable[[str], str]) -> str:
+    """replaces title content with a generated key."""
+
+    def repl(m: re.Match) -> str:
+        src = m.group(1)
+        dst = gen(src)
+        return f'title: "{dst}"'
+
+    return TITLE_CAPTURE_RE.sub(repl, ctx)
+
+
+def replace_description(ctx: str, gen: Callable[[str], str]) -> str:
+    """replaces description content with generated keys."""
+
+    def replace_array(m: re.Match) -> str:
+        array_text = m.group(0)
+
+        def replace_string(sm: re.Match) -> str:
+            src = sm.group(1)
+            return f'"{gen(src)}"'
+
+        return QUOTED_STR_RE.sub(replace_string, array_text)
+
+    return DESC_ARRAY_RE.sub(replace_array, ctx)
+
+
+def process_file(file_path: Path) -> Tuple[Path, Dict[str, str], Dict[str, int]]:
     logger = logging.getLogger("ftbq_keygen")
     logger.info(file_path)
 
-    lang_dict = {}
-    char_count = {}
+    lang_dict: Dict[str, str] = {}
+    char_count: Dict[str, int] = {}
+    gen = KeyGenerator(lang_dict, char_count)
 
-    def gen_uuid(text: str):
-        key = f"ftbq_keygen.{uuid.uuid5(uuid.NAMESPACE_DNS, text).hex}"
-        lang_dict[key] = text
-        char_count[key] = len(text)
-        return "{" + key + "}"
+    ctx = Path(file_path).read_text(encoding="utf-8")
+    ctx = replace_title(ctx, gen)
+    ctx = replace_description(ctx, gen)
 
-    def replace_title(ctx: str):
-        titleRegex = r'title: ".*"'
-        titleRegexStr = r'title: "(.+)"'
-        titles = re.findall(titleRegex, ctx)
-        for i in titles:
-            src = re.match(titleRegexStr, i).group(1)  # pyright: ignore[reportOptionalMemberAccess]
-            dst = gen_uuid(src)
-            ctx = ctx.replace(i, i.replace(src, dst))
-        return ctx
-
-    def replace_desc(ctx: str):
-        descRegex = r'description: \[(?:\s*)?(?:".*"(?:\s*)?)+\]'
-        targets = re.findall(descRegex, ctx)
-        for desc in targets:
-            desc_old = desc
-            srcs = re.findall('"(.+)"', desc)
-            for src in srcs:
-                dst = gen_uuid(src)
-                desc = desc.replace(src, dst)
-            ctx = ctx.replace(desc_old, desc)
-        return ctx
-
-    ctx = open(file_path, "r", encoding="utf-8").read()
-    ctx = replace_title(ctx)
-    ctx = replace_desc(ctx)
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(ctx)
+    Path(file_path).write_text(ctx, encoding="utf-8")
     return file_path, lang_dict, char_count
 
 
@@ -75,8 +95,8 @@ def main():
     files = list(folder.glob("**/*.snbt"))
     logger.info(f"Found {len(files)} files to process.")
 
-    all_lang = {}
-    all_char_count = {}
+    all_lang: Dict[str, str] = {}
+    all_char_count: Dict[str, int] = {}
     with ThreadPoolExecutor() as executor:
         results = executor.map(process_file, files)
         for result in results:
@@ -85,9 +105,8 @@ def main():
             all_lang.update(lang_dict)
             all_char_count.update(char_count)
 
-    json.dump(
-        all_lang, open("lang.json", "w", encoding="utf-8"), ensure_ascii=False, indent=4
-    )
+    with open("lang.json", "w", encoding="utf-8") as f:
+        json.dump(all_lang, f, ensure_ascii=False, indent=4)
 
     logger.info("ALL Done!")
     logger.info(f"Processed {len(files)} files.")
